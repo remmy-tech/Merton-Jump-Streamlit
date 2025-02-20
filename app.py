@@ -38,11 +38,6 @@ def merton_jump_call(S, K, T, r, sigma, q, m, v, lam, N=40):
     """
     European call under Merton's Jump-Diffusion using summation of
     Poisson-weighted Black–Scholes prices.
-      - lam = jump intensity (λ)
-      - m   = jump multiplier (if m = exp(mu_j), then ln(m) is the mean jump size)
-      - v   = jump volatility (std dev of jump)
-    We assume risk-neutral drift adjustment: r_k = (r - q) - lam*(m - 1).
-    (Optionally, one could add (k*np.log(m))/T to r_k if desired.)
     """
     if T <= 0:
         return max(S - K, 0)
@@ -52,10 +47,11 @@ def merton_jump_call(S, K, T, r, sigma, q, m, v, lam, N=40):
         w_k = np.exp(-lam*T) * ((lam*T)**k / math.factorial(k))
         # Adjust underlying for k jumps: S * m^k
         S_k = S * np.exp(k * np.log(m))
-        # Adjust volatility; ensure that v's units are consistent with T
+        # Adjust volatility
         sigma_k = np.sqrt(sigma**2 + k*(v**2))
-        # Drift adjustment; if you wish, you can add (k*np.log(m))/T here.
+        # Effective drift
         r_k = (r - q) - lam*(m - 1)
+        # Price of call for that scenario
         bs_price = call_BS(S_k, K, T, r_k, sigma_k, q=0.0)
         price += w_k * bs_price
     return price
@@ -128,7 +124,6 @@ def impliedVol_put(p, S, K, T, r, q=0.0, max_iter=1000, tol=1e-6):
 
 
 # ------------- Greeks via finite differences under MJD ------------- #
-# Delta functions are already provided.
 def delta_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
     p_up = merton_jump_call(S + h, K, T, r, sigma, q, m, v, lam)
     p_0  = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
@@ -139,54 +134,55 @@ def delta_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
     p_0  = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
     return (p_up - p_0) / h
 
-# Gamma: second derivative with respect to S.
 def gamma_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
-    price_up = merton_jump_call(S + h, K, T, r, sigma, q, m, v, lam)
-    price_mid = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
-    price_down = merton_jump_call(S - h, K, T, r, sigma, q, m, v, lam)
-    return (price_up - 2 * price_mid + price_down) / (h ** 2)
+    price_up   = merton_jump_call(S + h,   K, T, r, sigma, q, m, v, lam)
+    price_mid  = merton_jump_call(S,       K, T, r, sigma, q, m, v, lam)
+    price_down = merton_jump_call(S - h,   K, T, r, sigma, q, m, v, lam)
+    return (price_up - 2*price_mid + price_down) / (h**2)
 
 def gamma_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
-    price_up = merton_jump_put(S + h, K, T, r, sigma, q, m, v, lam)
-    price_mid = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
-    price_down = merton_jump_put(S - h, K, T, r, sigma, q, m, v, lam)
-    return (price_up - 2 * price_mid + price_down) / (h ** 2)
+    price_up   = merton_jump_put(S + h,   K, T, r, sigma, q, m, v, lam)
+    price_mid  = merton_jump_put(S,       K, T, r, sigma, q, m, v, lam)
+    price_down = merton_jump_put(S - h,   K, T, r, sigma, q, m, v, lam)
+    return (price_up - 2*price_mid + price_down) / (h**2)
 
-# Vega: derivative with respect to volatility (σ).
 def vega_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.01):
-    price_up = merton_jump_call(S, K, T, r, sigma + h, q, m, v, lam)
+    price_up   = merton_jump_call(S, K, T, r, sigma + h, q, m, v, lam)
     price_down = merton_jump_call(S, K, T, r, sigma - h, q, m, v, lam)
-    return (price_up - price_down) / (2 * h)
+    return (price_up - price_down) / (2*h)
 
 def vega_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.01):
-    price_up = merton_jump_put(S, K, T, r, sigma + h, q, m, v, lam)
+    price_up   = merton_jump_put(S, K, T, r, sigma + h, q, m, v, lam)
     price_down = merton_jump_put(S, K, T, r, sigma - h, q, m, v, lam)
-    return (price_up - price_down) / (2 * h)
+    return (price_up - price_down) / (2*h)
 
-# Theta: derivative with respect to time to maturity (T).
-# Note: A decrease in T (time decay) is usually expressed per day.
 def theta_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1/365):
-    # Compute price at current T and at T - h (one day less)
+    """
+    Theta is usually negative, indicating how much the option price
+    decreases as we approach expiration (1 day).
+    """
+    if T - h < 0:
+        h = T  # If T is less than 1 day, just reduce to zero
     price_now = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
     price_next = merton_jump_call(S, K, T - h, r, sigma, q, m, v, lam)
-    # Theta is usually reported as a per-day decay (often negative)
     return (price_next - price_now) / h
 
 def theta_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1/365):
+    if T - h < 0:
+        h = T
     price_now = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
     price_next = merton_jump_put(S, K, T - h, r, sigma, q, m, v, lam)
     return (price_next - price_now) / h
 
-# Rho: derivative with respect to the risk-free rate (r).
 def rho_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.0001):
-    price_up = merton_jump_call(S, K, T, r + h, sigma, q, m, v, lam)
+    price_up   = merton_jump_call(S, K, T, r + h, sigma, q, m, v, lam)
     price_down = merton_jump_call(S, K, T, r - h, sigma, q, m, v, lam)
-    return (price_up - price_down) / (2 * h)
+    return (price_up - price_down) / (2*h)
 
 def rho_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.0001):
-    price_up = merton_jump_put(S, K, T, r + h, sigma, q, m, v, lam)
+    price_up   = merton_jump_put(S, K, T, r + h, sigma, q, m, v, lam)
     price_down = merton_jump_put(S, K, T, r - h, sigma, q, m, v, lam)
-    return (price_up - price_down) / (2 * h)
+    return (price_up - price_down) / (2*h)
 
 
 # ------------- Streamlit UI ------------- #
@@ -258,7 +254,7 @@ with col2:
         st.write(f"**Theta (per day):** {thetaPut:.3f}")
         st.write(f"**Rho:** {rhoPut:.3f}")
 
-# Heatmaps of MJD call/put as S and σ vary
+# ------------------- Heatmaps for Call and Put Prices ------------------- #
 S_values = np.linspace(S*1.5, S*0.5, 9)
 sigma_values = np.linspace(0.1, 0.5, 9)
 call_prices = np.zeros((len(S_values), len(sigma_values)))
@@ -295,62 +291,105 @@ with colH1:
 with colH2:
     st.plotly_chart(put_fig)
 
-
-# Plot Greek sensitivities vs. Underlying Price
+# ------------------- Greeks vs. Underlying Price ------------------- #
 Stock_values = np.linspace(K*0.5, K*1.5, 100)
-delta_call_vals = [delta_call_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
-# likewise gamma_call_vals, etc. if you implement them
 
-fig_sens_call = go.Figure()
-fig_sens_call.add_trace(go.Scatter(x=Stock_values, y=delta_call_vals,
-                                   mode='lines', name='Delta', line=dict(color='#ADD8E6')))
-fig_sens_call.update_layout(title='Call Greek Sensitivity vs. Underlying Price',
-                            xaxis_title='Underlying Price',
-                            yaxis_title='Value')
+# For calls
+call_delta_vals  = [delta_call_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+call_gamma_vals  = [gamma_call_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+call_vega_vals   = [vega_call_mjd(Sv, K, T, r, sigma, q, m, v, lam)  for Sv in Stock_values]
+call_theta_vals  = [theta_call_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+call_rho_vals    = [rho_call_mjd(Sv, K, T, r, sigma, q, m, v, lam)   for Sv in Stock_values]
 
-st.expander("Call Greek Sensitivity Graph").plotly_chart(fig_sens_call)
+fig_call_sens = go.Figure()
+fig_call_sens.add_trace(go.Scatter(x=Stock_values, y=call_delta_vals, name='Delta'))
+fig_call_sens.add_trace(go.Scatter(x=Stock_values, y=call_gamma_vals, name='Gamma'))
+fig_call_sens.add_trace(go.Scatter(x=Stock_values, y=call_vega_vals,  name='Vega'))
+fig_call_sens.add_trace(go.Scatter(x=Stock_values, y=call_theta_vals, name='Theta'))
+fig_call_sens.add_trace(go.Scatter(x=Stock_values, y=call_rho_vals,   name='Rho'))
+fig_call_sens.update_layout(
+    title='Call Greek Sensitivity Graph',
+    xaxis_title='Underlying Price',
+    yaxis_title='Greek Value'
+)
 
-# Similarly for put
-delta_put_vals = [delta_put_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
-fig_sens_put = go.Figure()
-fig_sens_put.add_trace(go.Scatter(x=Stock_values, y=delta_put_vals,
-                                  mode='lines', name='Delta', line=dict(color='#ADD8E6')))
-fig_sens_put.update_layout(title='Put Greek Sensitivity vs. Underlying Price',
-                           xaxis_title='Underlying Price',
-                           yaxis_title='Value')
+# For puts
+put_delta_vals  = [delta_put_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+put_gamma_vals  = [gamma_put_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+put_vega_vals   = [vega_put_mjd(Sv, K, T, r, sigma, q, m, v, lam)  for Sv in Stock_values]
+put_theta_vals  = [theta_put_mjd(Sv, K, T, r, sigma, q, m, v, lam) for Sv in Stock_values]
+put_rho_vals    = [rho_put_mjd(Sv, K, T, r, sigma, q, m, v, lam)   for Sv in Stock_values]
 
-st.expander("Put Greek Sensitivity Graph").plotly_chart(fig_sens_put)
+fig_put_sens = go.Figure()
+fig_put_sens.add_trace(go.Scatter(x=Stock_values, y=put_delta_vals, name='Delta'))
+fig_put_sens.add_trace(go.Scatter(x=Stock_values, y=put_gamma_vals, name='Gamma'))
+fig_put_sens.add_trace(go.Scatter(x=Stock_values, y=put_vega_vals,  name='Vega'))
+fig_put_sens.add_trace(go.Scatter(x=Stock_values, y=put_theta_vals, name='Theta'))
+fig_put_sens.add_trace(go.Scatter(x=Stock_values, y=put_rho_vals,   name='Rho'))
+fig_put_sens.update_layout(
+    title='Put Greek Sensitivity Graph',
+    xaxis_title='Underlying Price',
+    yaxis_title='Greek Value'
+)
+
+colG1, colG2 = st.columns(2)
+with colG1:
+    st.plotly_chart(fig_call_sens, use_container_width=True)
+with colG2:
+    st.plotly_chart(fig_put_sens, use_container_width=True)
 
 
-# Plot Greeks over time until expiration
-# (For demonstration, just do Delta over time)
+# ------------------- Greeks over time until expiration ------------------- #
 total_days = max((exp - dt.datetime.today()).days, 1)
 exp_dates = pd.date_range(start=dt.datetime.today(), periods=total_days)
-T_values = [(exp - d).days/365.0 for d in exp_dates]
+T_values = [(exp - d).days / 365.0 for d in exp_dates]
 
-delta_call_time = [delta_call_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
-delta_put_time  = [delta_put_mjd(S, K, t, r, sigma, q, m, v, lam)  for t in T_values]
+# For calls over time
+call_delta_time  = [delta_call_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+call_gamma_time  = [gamma_call_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+call_vega_time   = [vega_call_mjd(S, K, t, r, sigma, q, m, v, lam)  for t in T_values]
+call_theta_time  = [theta_call_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+call_rho_time    = [rho_call_mjd(S, K, t, r, sigma, q, m, v, lam)   for t in T_values]
 
-fig_time_call = go.Figure()
-fig_time_call.add_trace(go.Scatter(x=exp_dates, y=delta_call_time,
-                                   mode='lines', name='Delta', line=dict(color='#ADD8E6')))
-fig_time_call.update_layout(title='Call Delta Over Time Until Expiration',
-                            xaxis_title='Date', yaxis_title='Delta')
+fig_call_time = go.Figure()
+fig_call_time.add_trace(go.Scatter(x=exp_dates, y=call_delta_time, name='Delta'))
+fig_call_time.add_trace(go.Scatter(x=exp_dates, y=call_gamma_time, name='Gamma'))
+fig_call_time.add_trace(go.Scatter(x=exp_dates, y=call_vega_time,  name='Vega'))
+fig_call_time.add_trace(go.Scatter(x=exp_dates, y=call_theta_time, name='Theta'))
+fig_call_time.add_trace(go.Scatter(x=exp_dates, y=call_rho_time,   name='Rho'))
+fig_call_time.update_layout(
+    title='Call Greeks Over Time Until Expiration',
+    xaxis_title='Date',
+    yaxis_title='Greek Value'
+)
 
-fig_time_put = go.Figure()
-fig_time_put.add_trace(go.Scatter(x=exp_dates, y=delta_put_time,
-                                  mode='lines', name='Delta', line=dict(color='#ADD8E6')))
-fig_time_put.update_layout(title='Put Delta Over Time Until Expiration',
-                           xaxis_title='Date', yaxis_title='Delta')
+# For puts over time
+put_delta_time  = [delta_put_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+put_gamma_time  = [gamma_put_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+put_vega_time   = [vega_put_mjd(S, K, t, r, sigma, q, m, v, lam)  for t in T_values]
+put_theta_time  = [theta_put_mjd(S, K, t, r, sigma, q, m, v, lam) for t in T_values]
+put_rho_time    = [rho_put_mjd(S, K, t, r, sigma, q, m, v, lam)   for t in T_values]
+
+fig_put_time = go.Figure()
+fig_put_time.add_trace(go.Scatter(x=exp_dates, y=put_delta_time, name='Delta'))
+fig_put_time.add_trace(go.Scatter(x=exp_dates, y=put_gamma_time, name='Gamma'))
+fig_put_time.add_trace(go.Scatter(x=exp_dates, y=put_vega_time,  name='Vega'))
+fig_put_time.add_trace(go.Scatter(x=exp_dates, y=put_theta_time, name='Theta'))
+fig_put_time.add_trace(go.Scatter(x=exp_dates, y=put_rho_time,   name='Rho'))
+fig_put_time.update_layout(
+    title='Put Greeks Over Time Until Expiration',
+    xaxis_title='Date',
+    yaxis_title='Greek Value'
+)
 
 colT1, colT2 = st.columns(2)
 with colT1:
-    st.expander("Call Greeks over time").plotly_chart(fig_time_call)
+    st.plotly_chart(fig_call_time, use_container_width=True)
 with colT2:
-    st.expander("Put Greeks over time").plotly_chart(fig_time_put)
+    st.plotly_chart(fig_put_time, use_container_width=True)
 
 
-# Implied volatility section (still the Black–Scholes solver)
+# ------------------- Implied Volatility section ------------------- #
 st.header("Implied Volatility (Black–Scholes style)")
 col3, col4 = st.columns(2)
 with col3:
@@ -374,7 +413,7 @@ with col4:
         st.write("No implied vol solution found for put.")
 
 
-# Compare with historical volatility
+# ------------------- Compare with historical volatility ------------------- #
 st.header("Compare with historical volatility")
 ticker = st.text_input('Yahoo Stock Ticker', value='AAPL')
 col5, col6 = st.columns(2)

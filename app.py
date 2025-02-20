@@ -39,46 +39,45 @@ def merton_jump_call(S, K, T, r, sigma, q, m, v, lam, N=40):
     European call under Merton's Jump-Diffusion using summation of
     Poisson-weighted Black–Scholes prices.
       - lam = jump intensity (λ)
-      - m   = e^(mean jump), or "mean jump size" > 0
+      - m   = jump multiplier (if m = exp(mu_j), then ln(m) is the mean jump size)
       - v   = jump volatility (std dev of jump)
-    We assume risk-neutral drift shift: r -> (r - q - λ*(m - 1)).
+    We assume risk-neutral drift adjustment: r_k = (r - q) - lam*(m - 1).
+    (Optionally, one could add (k*np.log(m))/T to r_k if desired.)
     """
     if T <= 0:
         return max(S - K, 0)
     price = 0.0
-    # Poisson pmf factor: e^{-lam*T} (lam*T)^k / k!
     for k in range(N):
-        w_k = np.exp(-lam*T)*( (lam*T)**k / math.factorial(k) )
-        # Adjust underlying upward by (k jumps), each jump ~ ln(m)
+        # Poisson probability of k jumps
+        w_k = np.exp(-lam*T) * ((lam*T)**k / math.factorial(k))
+        # Adjust underlying for k jumps: S * m^k
         S_k = S * np.exp(k * np.log(m))
-        # Adjust volatility: sqrt( sigma^2 + k*v^2 )
-        sigma_k = np.sqrt( sigma**2 + k*(v**2) )
-        # Effective drift: (r - q - lam*(m - 1))
+        # Adjust volatility; ensure that v's units are consistent with T
+        sigma_k = np.sqrt(sigma**2 + k*(v**2))
+        # Drift adjustment; if you wish, you can add (k*np.log(m))/T here.
         r_k = (r - q) - lam*(m - 1)
-        # Price of call for that scenario
         bs_price = call_BS(S_k, K, T, r_k, sigma_k, q=0.0)
         price += w_k * bs_price
     return price
 
 def merton_jump_put(S, K, T, r, sigma, q, m, v, lam, N=40):
     """
-    European put under Merton's Jump-Diffusion, same logic as above.
+    European put under Merton's Jump-Diffusion.
     """
     if T <= 0:
         return max(K - S, 0)
     price = 0.0
     for k in range(N):
-        w_k = np.exp(-lam*T)*( (lam*T)**k / math.factorial(k) )
+        w_k = np.exp(-lam*T) * ((lam*T)**k / math.factorial(k))
         S_k = S * np.exp(k * np.log(m))
-        sigma_k = np.sqrt( sigma**2 + k*(v**2) )
+        sigma_k = np.sqrt(sigma**2 + k*(v**2))
         r_k = (r - q) - lam*(m - 1)
         bs_price = put_BS(S_k, K, T, r_k, sigma_k, q=0.0)
         price += w_k * bs_price
     return price
 
 
-# ------------- Implied-vol (Black–Scholes) from market prices ------------- #
-# (Kept identical to your BS code so you retain the same UI/plots)
+# ------------- Implied Volatility (Black–Scholes) ------------- #
 def impliedVol_call(p, S, K, T, r, q=0.0, max_iter=1000, tol=1e-6):
     """
     Black–Scholes implied volatility for a call using Newton–Raphson.
@@ -97,10 +96,10 @@ def impliedVol_call(p, S, K, T, r, q=0.0, max_iter=1000, tol=1e-6):
         diff = f(sigma_guess)
         if abs(diff) < tol:
             return sigma_guess
-        v = vega(sigma_guess)
-        if abs(v) < 1e-12:
+        vega_val = vega(sigma_guess)
+        if abs(vega_val) < 1e-12:
             break
-        sigma_guess -= diff / v
+        sigma_guess -= diff / vega_val
     return None
 
 def impliedVol_put(p, S, K, T, r, q=0.0, max_iter=1000, tol=1e-6):
@@ -121,30 +120,73 @@ def impliedVol_put(p, S, K, T, r, q=0.0, max_iter=1000, tol=1e-6):
         diff = f(sigma_guess)
         if abs(diff) < tol:
             return sigma_guess
-        v = vega(sigma_guess)
-        if abs(v) < 1e-12:
+        vega_val = vega(sigma_guess)
+        if abs(vega_val) < 1e-12:
             break
-        sigma_guess -= diff / v
+        sigma_guess -= diff / vega_val
     return None
 
 
 # ------------- Greeks via finite differences under MJD ------------- #
-# For brevity, here we show Delta only, but you can repeat the pattern
-# for Gamma, Vega, etc., if desired.
+# Delta functions are already provided.
 def delta_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
-    """
-    Finite-difference approximation to Delta of the MJD call.
-    Uses price(S+ h) - price(S) as the difference.
-    h=1.0 is large but matches your original approach.
-    """
     p_up = merton_jump_call(S + h, K, T, r, sigma, q, m, v, lam)
-    p_0  = merton_jump_call(S,     K, T, r, sigma, q, m, v, lam)
-    return (p_up - p_0)/h
+    p_0  = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
+    return (p_up - p_0) / h
 
 def delta_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
     p_up = merton_jump_put(S + h, K, T, r, sigma, q, m, v, lam)
-    p_0  = merton_jump_put(S,     K, T, r, sigma, q, m, v, lam)
-    return (p_up - p_0)/h
+    p_0  = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
+    return (p_up - p_0) / h
+
+# Gamma: second derivative with respect to S.
+def gamma_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
+    price_up = merton_jump_call(S + h, K, T, r, sigma, q, m, v, lam)
+    price_mid = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
+    price_down = merton_jump_call(S - h, K, T, r, sigma, q, m, v, lam)
+    return (price_up - 2 * price_mid + price_down) / (h ** 2)
+
+def gamma_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1.0):
+    price_up = merton_jump_put(S + h, K, T, r, sigma, q, m, v, lam)
+    price_mid = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
+    price_down = merton_jump_put(S - h, K, T, r, sigma, q, m, v, lam)
+    return (price_up - 2 * price_mid + price_down) / (h ** 2)
+
+# Vega: derivative with respect to volatility (σ).
+def vega_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.01):
+    price_up = merton_jump_call(S, K, T, r, sigma + h, q, m, v, lam)
+    price_down = merton_jump_call(S, K, T, r, sigma - h, q, m, v, lam)
+    return (price_up - price_down) / (2 * h)
+
+def vega_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.01):
+    price_up = merton_jump_put(S, K, T, r, sigma + h, q, m, v, lam)
+    price_down = merton_jump_put(S, K, T, r, sigma - h, q, m, v, lam)
+    return (price_up - price_down) / (2 * h)
+
+# Theta: derivative with respect to time to maturity (T).
+# Note: A decrease in T (time decay) is usually expressed per day.
+def theta_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=1/365):
+    # Compute price at current T and at T - h (one day less)
+    price_now = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
+    price_next = merton_jump_call(S, K, T - h, r, sigma, q, m, v, lam)
+    # Theta is usually reported as a per-day decay (often negative)
+    return (price_next - price_now) / h
+
+def theta_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=1/365):
+    price_now = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
+    price_next = merton_jump_put(S, K, T - h, r, sigma, q, m, v, lam)
+    return (price_next - price_now) / h
+
+# Rho: derivative with respect to the risk-free rate (r).
+def rho_call_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.0001):
+    price_up = merton_jump_call(S, K, T, r + h, sigma, q, m, v, lam)
+    price_down = merton_jump_call(S, K, T, r - h, sigma, q, m, v, lam)
+    return (price_up - price_down) / (2 * h)
+
+def rho_put_mjd(S, K, T, r, sigma, q, m, v, lam, h=0.0001):
+    price_up = merton_jump_put(S, K, T, r + h, sigma, q, m, v, lam)
+    price_down = merton_jump_put(S, K, T, r - h, sigma, q, m, v, lam)
+    return (price_up - price_down) / (2 * h)
 
 
 # ------------- Streamlit UI ------------- #
@@ -162,7 +204,6 @@ with col_t:
         </a>
         """, unsafe_allow_html=True)
 
-
 # Sidebar input parameters
 st.sidebar.header('Input MJD parameters')
 S = st.sidebar.number_input('Stock Price (S)', min_value=0.0, value=100.0, step=0.01)
@@ -179,14 +220,21 @@ m   = st.sidebar.number_input('Mean Jump Size (m)', min_value=0.01, value=1.0, s
 v   = st.sidebar.number_input('Jump Size Std Dev (v)', min_value=0.0, value=0.3, step=0.01)
 lam = st.sidebar.number_input('Jump Intensity (λ)', min_value=0.0, value=1.0, step=0.1)
 
-
 # Compute MJD call/put prices
 callPrice = merton_jump_call(S, K, T, r, sigma, q, m, v, lam)
 putPrice  = merton_jump_put(S, K, T, r, sigma, q, m, v, lam)
 
-# Delta (example). If you like, define gamma, vega, etc. similarly.
+# Compute Greeks for call and put (Delta, Gamma, Vega, Theta, Rho)
 deltaCall = delta_call_mjd(S, K, T, r, sigma, q, m, v, lam)
 deltaPut  = delta_put_mjd(S, K, T, r, sigma, q, m, v, lam)
+gammaCall = gamma_call_mjd(S, K, T, r, sigma, q, m, v, lam)
+gammaPut  = gamma_put_mjd(S, K, T, r, sigma, q, m, v, lam)
+vegaCall  = vega_call_mjd(S, K, T, r, sigma, q, m, v, lam)
+vegaPut   = vega_put_mjd(S, K, T, r, sigma, q, m, v, lam)
+thetaCall = theta_call_mjd(S, K, T, r, sigma, q, m, v, lam)
+thetaPut  = theta_put_mjd(S, K, T, r, sigma, q, m, v, lam)
+rhoCall   = rho_call_mjd(S, K, T, r, sigma, q, m, v, lam)
+rhoPut    = rho_put_mjd(S, K, T, r, sigma, q, m, v, lam)
 
 # Display results
 col1, col2 = st.columns(2)
@@ -196,23 +244,19 @@ with col2:
     st.metric(label='MJD Put option price',  value=f"${putPrice:.2f}")
 
 with col1:
-    with st.expander("Call Greeks (example)"):
+    with st.expander("Call Greeks"):
         st.write(f"**Delta:** {deltaCall:.3f}")
-        # If you implement them:
-        # st.write(f"**Gamma:** ...")
-        # st.write(f"**Vega:** ...")
-        # st.write(f"**Theta:** ...")
-        # st.write(f"**Rho:** ...")
-
+        st.write(f"**Gamma:** {gammaCall:.3f}")
+        st.write(f"**Vega:** {vegaCall:.3f}")
+        st.write(f"**Theta (per day):** {thetaCall:.3f}")
+        st.write(f"**Rho:** {rhoCall:.3f}")
 with col2:
-    with st.expander("Put Greeks (example)"):
+    with st.expander("Put Greeks"):
         st.write(f"**Delta:** {deltaPut:.3f}")
-        # If you implement them:
-        # st.write(f"**Gamma:** ...")
-        # st.write(f"**Vega:** ...")
-        # st.write(f"**Theta:** ...")
-        # st.write(f"**Rho:** ...")
-
+        st.write(f"**Gamma:** {gammaPut:.3f}")
+        st.write(f"**Vega:** {vegaPut:.3f}")
+        st.write(f"**Theta (per day):** {thetaPut:.3f}")
+        st.write(f"**Rho:** {rhoPut:.3f}")
 
 # Heatmaps of MJD call/put as S and σ vary
 S_values = np.linspace(S*1.5, S*0.5, 9)

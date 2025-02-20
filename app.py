@@ -485,7 +485,7 @@ st.header("Compare with historical volatility")
 ticker = st.text_input('Yahoo Stock Ticker', value='AAPL')
 col5, col6 = st.columns(2)
 with col5:
-    start = st.date_input('Start Date', value=dt.datetime(2021,1,1))
+    start = st.date_input('Start Date', value=dt.datetime(2024,7,24))
 with col6:
     end   = st.date_input('End Date', value=dt.datetime.today())
 
@@ -524,6 +524,8 @@ if start < end:
         title='Historical and Implied Volatility',
         xaxis_title='Date',
         yaxis_title='Volatility',
+        # (2) Show y-axis as percentages
+        yaxis=dict(tickformat='.1%'),
         legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=0.75)
     )
     st.plotly_chart(fig_hv, use_container_width=True)

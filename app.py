@@ -1,12 +1,15 @@
+import pandas as pd
 import streamlit as st
 import yfinance as yf
 import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 import matplotlib.pyplot as plt
-import math
-import datetime as dt
+import seaborn as sns
 from scipy.stats import norm
+import datetime as dt
+import plotly.graph_objects as go
+import plotly.express as px
+from matplotlib.colors import LinearSegmentedColormap
+import math
 
 # ------------- Black-Scholes functions (used inside MJD expansion) ------------- #
 def call_BS(S, K, T, r, sigma, q=0.0):

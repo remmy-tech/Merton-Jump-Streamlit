@@ -1,6 +1,7 @@
 import pandas as pd
 import streamlit as st
 import numpy as np
+import math
 import matplotlib.pyplot as plt
 from scipy.stats import norm
 from scipy.optimize import minimize_scalar
@@ -35,7 +36,7 @@ def merton_jump_call(S, K, T, r, sigma, m, v, lam, N_terms=40):
     for k in range(N_terms):
         r_k = r - lam * (m - 1) + (k * np.log(m)) / T
         sigma_k = np.sqrt(sigma**2 + (k * v**2) / T)
-        weight = exp_neg_mlamT * (m * lam * T)**k / np.math.factorial(k)
+        weight = exp_neg_mlamT * (m * lam * T)**k / math.factorial(k)
         price += weight * call_BS(S, K, T, r_k, sigma_k)
     
     return price
@@ -48,7 +49,7 @@ def merton_jump_put(S, K, T, r, sigma, m, v, lam, N_terms=40):
     for k in range(N_terms):
         r_k = r - lam * (m - 1) + (k * np.log(m)) / T
         sigma_k = np.sqrt(sigma**2 + (k * v**2) / T)
-        weight = exp_neg_mlamT * (m * lam * T)**k / np.math.factorial(k)
+        weight = exp_neg_mlamT * (m * lam * T)**k / math.factorial(k)
         price += weight * put_BS(S, K, T, r_k, sigma_k)
     
     return price

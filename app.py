@@ -11,7 +11,19 @@ import math
 
 # Normal CDF function
 N = norm.cdf
+# ---------------------- Black and Sholes Functions ---------------------- #
 
+def call_BS(S, K, T, r, sigma):
+    """ Black-Scholes Call Option Pricing Formula """
+    d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return S * N(d1) - K * np.exp(-r * T) * N(d2)
+
+def put_BS(S, K, T, r, sigma):
+    """ Black-Scholes Put Option Pricing Formula """
+    d1 = (np.log(S/K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
+    d2 = d1 - sigma * np.sqrt(T)
+    return K * np.exp(-r * T) * N(-d2) - S * N(-d1)
 # ---------------------- Merton Jump Diffusion Functions ---------------------- #
 
 def merton_jump_call(S, K, T, r, sigma, m, v, lam, N_terms=40):

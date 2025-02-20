@@ -291,6 +291,73 @@ with colH1:
 with colH2:
     st.plotly_chart(put_fig)
 
+# ============ BEGIN: MJD vs. Black–Scholes Price Comparison ============
+
+st.subheader("Compare MJD vs. Black–Scholes Prices")
+
+# 1) Compute standard Black–Scholes call/put for the same parameters
+bs_callPrice = call_BS(S, K, T, r, sigma, q)
+bs_putPrice  = put_BS(S, K, T, r, sigma, q)
+
+# 2) Display them side by side in metrics
+colC1, colC2 = st.columns(2)
+with colC1:
+    st.metric(label="Black–Scholes Call Price", value=f"${bs_callPrice:.2f}")
+with colC2:
+    st.metric(label="Black–Scholes Put Price",  value=f"${bs_putPrice:.2f}")
+
+st.write("Below, we compare how the **Jump Diffusion** prices differ from **Black–Scholes** prices as we vary the spot price.")
+
+# 3) Create a range of spot prices around S (for the line charts)
+S_range = np.linspace(S*0.5, S*1.5, 100)
+
+# 4) MJD vs. BS for CALL
+mjd_call_vals = [merton_jump_call(Sv, K, T, r, sigma, q, m, v, lam) for Sv in S_range]
+bs_call_vals  = [call_BS(Sv, K, T, r, sigma, q) for Sv in S_range]
+
+fig_cmp_call = go.Figure()
+fig_cmp_call.add_trace(go.Scatter(
+    x=S_range, y=mjd_call_vals,
+    mode='lines', name='Jump Diffusion', line=dict(color='blue')
+))
+fig_cmp_call.add_trace(go.Scatter(
+    x=S_range, y=bs_call_vals,
+    mode='lines', name='Black–Scholes', line=dict(color='orange', dash='dash')
+))
+fig_cmp_call.update_layout(
+    title='Call Option Price: MJD vs. Black–Scholes',
+    xaxis_title='Spot Price',
+    yaxis_title='Option Price'
+)
+
+# 5) MJD vs. BS for PUT
+mjd_put_vals = [merton_jump_put(Sv, K, T, r, sigma, q, m, v, lam) for Sv in S_range]
+bs_put_vals  = [put_BS(Sv, K, T, r, sigma, q) for Sv in S_range]
+
+fig_cmp_put = go.Figure()
+fig_cmp_put.add_trace(go.Scatter(
+    x=S_range, y=mjd_put_vals,
+    mode='lines', name='Jump Diffusion', line=dict(color='blue')
+))
+fig_cmp_put.add_trace(go.Scatter(
+    x=S_range, y=bs_put_vals,
+    mode='lines', name='Black–Scholes', line=dict(color='orange', dash='dash')
+))
+fig_cmp_put.update_layout(
+    title='Put Option Price: MJD vs. Black–Scholes',
+    xaxis_title='Spot Price',
+    yaxis_title='Option Price'
+)
+
+# 6) Display both plots side by side
+colC3, colC4 = st.columns(2)
+with colC3:
+    st.plotly_chart(fig_cmp_call, use_container_width=True)
+with colC4:
+    st.plotly_chart(fig_cmp_put, use_container_width=True)
+
+# ============ END: MJD vs. Black–Scholes Price Comparison ============
+
 # ------------------- Greeks vs. Underlying Price ------------------- #
 Stock_values = np.linspace(K*0.5, K*1.5, 100)
 
